@@ -357,6 +357,8 @@ int32 UUINavInputBox::FinishUpdateNewEnhancedInputKey(const FKey& PressedKey, co
 				ApplyNegateModifiers(this, NewMapping, bNegateX != bIsNegativeXAxis, bNegateY != bIsNegativeYAxis, bNegateZ != bIsNegativeZAxis);
 			}
 		}
+
+		const FKey NewMappingKey = NewMapping.Key;
 		if (NewAxisKey.IsValid())
 		{
 			InputContext->UnmapKey(InputActionData.Action, Keys[Index]);
@@ -372,7 +374,7 @@ int32 UUINavInputBox::FinishUpdateNewEnhancedInputKey(const FKey& PressedKey, co
 		InputButtons[Index]->SetText(GetKeyText(Index));
 
 		// Try to merge 2 1D axes into a 2D axis
-		TryMap2DAxisKey(NewMapping.Key, Index);
+		TryMap2DAxisKey(NewMappingKey, Index);
 	}
 	else
 	{
@@ -439,7 +441,7 @@ void UUINavInputBox::TryMapEnhancedAxisKey(const FKey& NewKey, const int32 Index
 	}
 }
 
-void UUINavInputBox::TryMap2DAxisKey(const FKey& NewMappingKey, const int Index)
+void UUINavInputBox::TryMap2DAxisKey(const FKey NewMappingKey, const int Index)
 {
 	const FKey OppositeAxis = Container->UINavPC->GetOppositeAxis2DAxis(NewMappingKey);
 	if (OppositeAxis.IsValid())
@@ -831,23 +833,21 @@ void UUINavInputBox::AddHoldModifier(FEnhancedActionKeyMapping& ActionMapping)
 
 void UUINavInputBox::RemoveHoldModifier(FEnhancedActionKeyMapping& ActionMapping, const TObjectPtr<UInputTrigger> TriggerToAdd /*= nullptr*/)
 {
-	for (const TObjectPtr<UInputTrigger>& Trigger : ActionMapping.Triggers)
+	const int32 HoldTriggerIndex = ActionMapping.Triggers.IndexOfByPredicate([](const TObjectPtr<UInputTrigger>& Trigger)
 	{
-		if (!IsValid(Trigger))
-		{
-			continue;
-		}
+		return IsValid(Trigger) &&
+			(Trigger->IsA<UInputTriggerHold>() || Trigger->IsA<UInputTriggerHoldAndRelease>());
+	});
 
-		if (Trigger->IsA<UInputTriggerHold>() ||
-			Trigger->IsA<UInputTriggerHoldAndRelease>())
-		{
-			ActionMapping.Triggers.Remove(Trigger);
-			if (IsValid(TriggerToAdd))
-			{
-				ActionMapping.Triggers.Add(DuplicateObject<UInputTrigger>(TriggerToAdd, InputContext));
-			}
-			return;
-		}
+	if (HoldTriggerIndex == INDEX_NONE)
+	{
+		return;
+	}
+
+	ActionMapping.Triggers.RemoveAt(HoldTriggerIndex);
+	if (IsValid(TriggerToAdd))
+	{
+		ActionMapping.Triggers.Add(DuplicateObject<UInputTrigger>(TriggerToAdd, InputContext));
 	}
 }
 

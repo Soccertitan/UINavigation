@@ -17,6 +17,8 @@
 #include "Components/RichTextBlock.h"
 #include "IImageWrapper.h"
 #include "EnhancedInputComponent.h"
+#include "InputAction.h"
+#include "InputMappingContext.h"
 #include "UINavMacros.h"
 #include "Internationalization/Internationalization.h"
 #include "HAL/Platform.h"
@@ -176,10 +178,10 @@ void UUINavInputContainer::CreateInputBoxes()
 	for (int i = 0; i < NumberOfInputs; ++i)
 	{
 		UUINavInputBox* NewInputBox = CreateWidget<UUINavInputBox>(this, InputBox_BP);
-		InputBoxes.Add(NewInputBox);
 		NewInputBox->Container = this;
 		NewInputBox->KeysPerInput = KeysPerInput;
 
+		bool bInputContextsValid = true;
 		int Index = i;
 		for (const TPair<UInputMappingContext*, FInputContainerEnhancedActionDataArray>& Context : EnhancedInputs)
 		{
@@ -187,17 +189,27 @@ void UUINavInputContainer::CreateInputBoxes()
 			{
 				Index -= Context.Value.Actions.Num();
 			}
-			else
+			else if (IsValid(Context.Key) && IsValid(Context.Value.Actions[Index].Action))
 			{
 				NewInputBox->InputContext = Context.Key;
 				NewInputBox->InputActionData = Context.Value.Actions[Index];
 				NewInputBox->EnhancedInputGroups = Context.Value.Actions[Index].InputGroupsOverride.Num() > 0 ? Context.Value.Actions[Index].InputGroupsOverride : Context.Value.InputGroups;
 				break;
 			}
+			else
+			{
+				bInputContextsValid = false;
+				break;
+			}
+		}
+		
+		if (bInputContextsValid)
+		{
+			InputBoxes.Add(NewInputBox);
 		}
 	}
 
-	for (int i = 0; i < NumberOfInputs; ++i)
+	for (int i = 0; i < InputBoxes.Num(); ++i)
 	{
 		UUINavInputBox* const InputBox = InputBoxes[i];
 		InputBox->CreateKeyWidgets();
@@ -225,47 +237,39 @@ bool UUINavInputContainer::CanUseKey(UUINavInputBox* InputBox, const FKey Compar
 
 	for (int i = 0; i < InputBoxes.Num(); ++i)
 	{
-		if (InputBox == InputBoxes[i]) continue;
+		UUINavInputBox* const OtherInputBox = InputBoxes[i];
+		if (InputBox == OtherInputBox || !SharesInputGroup(InputBox, OtherInputBox)) continue;
 
-		const int KeyIndex = InputBoxes[i]->ContainsKey(CompareKey);
-		if (KeyIndex != INDEX_NONE)
+		for (int KeyIndex = 0; KeyIndex < OtherInputBox->KeysPerInput; ++KeyIndex)
 		{
-			bool bIsCollidingInputBox = false;
-			if (InputBox->EnhancedInputGroups.Contains(-1) ||
-				InputBoxes[i]->EnhancedInputGroups.Contains(-1))
-			{
-				bIsCollidingInputBox = true;
-			}
-
-			if (!bIsCollidingInputBox)
-			{
-				for (int InputGroup : InputBox->EnhancedInputGroups)
-				{
-					if (InputBoxes[i]->EnhancedInputGroups.Contains(InputGroup))
-					{
-						bIsCollidingInputBox = true;
-						break;
-					}
-				}
-			}
-
-			if (bIsHold != InputBoxes[i]->bIsHoldInput[KeyIndex])
-			{
-				return true;
-			}
-
-			if (bIsCollidingInputBox)
+			if (OtherInputBox->GetKey(KeyIndex) == CompareKey && OtherInputBox->bIsHoldInput[KeyIndex] == bIsHold)
 			{
 				OutCollidingActionIndex = i;
 				OutCollidingKeyIndex = KeyIndex;
 				return false;
 			}
-
-			return true;
 		}
 	}
 
 	return true;
+}
+
+bool UUINavInputContainer::SharesInputGroup(const UUINavInputBox* InputBox, const UUINavInputBox* OtherInputBox) const
+{
+	if (InputBox->EnhancedInputGroups.Contains(-1) || OtherInputBox->EnhancedInputGroups.Contains(-1))
+	{
+		return true;
+	}
+
+	for (const int InputGroup : InputBox->EnhancedInputGroups)
+	{
+		if (OtherInputBox->EnhancedInputGroups.Contains(InputGroup))
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool UUINavInputContainer::RespectsRestriction(const FKey CompareKey, const int Index)
